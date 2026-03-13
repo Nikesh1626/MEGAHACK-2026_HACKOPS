@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:async';
 import '../../LocationAccessScreen/location_access_screen.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/auth_storage_service.dart';
@@ -8,7 +10,7 @@ enum AuthState {
   initial,
   signup,
   login,
-  otpVerification,
+  emailVerification,
 }
 
 class AuthScreen extends StatefulWidget {
@@ -28,21 +30,204 @@ class _AuthScreenState extends State<AuthScreen> {
   final _phoneController = TextEditingController();
   final _emailController = TextEditingController();
   final _ageController = TextEditingController();
-  final _otpController = TextEditingController();
   final _passwordController = TextEditingController();
 
   // State variables
   bool _isLoading = false;
   bool _isSigningUp = false;
+  int _resendSecondsRemaining = 0;
+  Timer? _resendTimer;
+  Timer? _verificationPollTimer;
+  bool _isVerificationCheckRunning = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _handleIncomingEmailVerificationLink();
+    _completePasswordlessSignInIfNeeded();
+  }
+
+  Future<bool> _ensureVerifiedAndProceed(User user) async {
+    await user.reload();
+    final refreshedUser = FirebaseAuth.instance.currentUser;
+
+    if (refreshedUser == null || !refreshedUser.emailVerified) {
+      return false;
+    }
+
+    final pendingSignupData = await AuthStorageService.getPendingSignupData();
+    if (pendingSignupData != null) {
+      final firstName = (pendingSignupData['first_name'] ?? '').toString();
+      final lastName = (pendingSignupData['last_name'] ?? '').toString();
+      final phone = (pendingSignupData['phone'] ?? '').toString();
+      final email = (pendingSignupData['email'] ?? refreshedUser.email ?? '').toString();
+      final age = int.tryParse((pendingSignupData['age'] ?? '').toString()) ?? 0;
+
+      if (firstName.isNotEmpty && email.isNotEmpty && age > 0) {
+        try {
+          await AuthService.upsertUserProfile(
+            uid: refreshedUser.uid,
+            firstName: firstName,
+            lastName: lastName,
+            phone: phone,
+            age: age,
+            email: email,
+          );
+          await refreshedUser.updateDisplayName('$firstName $lastName'.trim());
+        } catch (_) {
+        }
+      }
+      await AuthStorageService.clearPendingSignupData();
+    }
+
+    await AuthStorageService.setLoggedIn(
+      value: true,
+      email: refreshedUser.email ?? _emailController.text.trim(),
+    );
+
+    _verificationPollTimer?.cancel();
+
+    if (context.mounted) {
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (context) => const LocationAccessScreen()),
+        (Route<dynamic> route) => false,
+      );
+    }
+    return true;
+  }
+
+  void _startResendCountdown() {
+    _resendTimer?.cancel();
+    setState(() => _resendSecondsRemaining = 120);
+
+    _resendTimer = Timer.periodic(const Duration(seconds: 1), (timer) {
+      if (!mounted) {
+        timer.cancel();
+        return;
+      }
+
+      if (_resendSecondsRemaining <= 1) {
+        timer.cancel();
+        setState(() => _resendSecondsRemaining = 0);
+      } else {
+        setState(() => _resendSecondsRemaining -= 1);
+      }
+    });
+  }
+
+  String _formatResendTime(int seconds) {
+    final minutes = (seconds ~/ 60).toString().padLeft(2, '0');
+    final remainingSeconds = (seconds % 60).toString().padLeft(2, '0');
+    return '$minutes:$remainingSeconds';
+  }
+
+  Future<void> _checkEmailVerificationNow() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Session expired. Please login again.')),
+        );
+        setState(() {
+          _authState = AuthState.login;
+          _isSigningUp = false;
+        });
+      }
+      return;
+    }
+
+    setState(() => _isLoading = true);
+    var verified = false;
+    try {
+      verified = await _ensureVerifiedAndProceed(user);
+    } catch (_) {
+      verified = false;
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+
+    if (!verified && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Email not verified yet. Please check your inbox.')),
+      );
+    }
+  }
+
+  Future<void> _resendVerificationEmail() async {
+    if (_resendSecondsRemaining > 0) return;
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    setState(() => _isLoading = true);
+    try {
+      await user.sendEmailVerification();
+      _startResendCountdown();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Verification email resent.')),
+        );
+      }
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Failed to resend verification email.')),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  void _startVerificationPolling() {
+    _verificationPollTimer?.cancel();
+    _verificationPollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      if (!mounted || _authState != AuthState.emailVerification) return;
+      if (_isVerificationCheckRunning) return;
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) return;
+
+      _isVerificationCheckRunning = true;
+      try {
+        await _ensureVerifiedAndProceed(user);
+      } catch (_) {
+      } finally {
+        _isVerificationCheckRunning = false;
+      }
+    });
+  }
+
+  Future<void> _handleIncomingEmailVerificationLink() async {
+    final uri = Uri.base;
+    if (!AuthService.isEmailVerificationLink(uri)) return;
+
+    final code = uri.queryParameters['oobCode'];
+    if (code == null || code.isEmpty) return;
+
+    try {
+      await AuthService.applyEmailVerificationCode(code);
+      final user = FirebaseAuth.instance.currentUser;
+      if (user != null) {
+        await _ensureVerifiedAndProceed(user);
+      }
+    } catch (_) {
+    }
+  }
 
   @override
   void dispose() {
+    _resendTimer?.cancel();
+    _verificationPollTimer?.cancel();
     _firstNameController.dispose();
     _lastNameController.dispose();
     _phoneController.dispose();
     _emailController.dispose();
     _ageController.dispose();
-    _otpController.dispose();
     _passwordController.dispose();
     super.dispose();
   }
@@ -206,7 +391,7 @@ class _AuthScreenState extends State<AuthScreen> {
               width: double.infinity,
               child: ElevatedButton(
                 onPressed: _isLoading ? null : _submitSignup,
-                child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Send OTP'),
+                child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Create Account'),
               ),
             ),
             TextButton(
@@ -252,6 +437,14 @@ class _AuthScreenState extends State<AuthScreen> {
                 child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Login'),
               ),
             ),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton(
+                onPressed: _isLoading ? null : _submitPasswordlessSignIn,
+                child: const Text('Sign in with Email Link'),
+              ),
+            ),
             TextButton(
               onPressed: () => setState(() {
                 _authState = AuthState.signup;
@@ -290,29 +483,54 @@ class _AuthScreenState extends State<AuthScreen> {
     );
   }
 
-  Widget _buildOtpView() {
+  Widget _buildEmailVerificationView() {
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24.0),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           _buildAuthHeader(
-              'Verify Your Email', 'Enter the 6-digit OTP sent to\n${_emailController.text}'),
-          TextFormField(
-            controller: _otpController,
-            decoration: const InputDecoration(labelText: 'OTP'),
-            keyboardType: TextInputType.number,
+            'Verify Your Email',
+            'We sent a verification link to\n${_emailController.text.trim()}',
+          ),
+          const SizedBox(height: 12),
+          const Text(
+            'Open your email and click the link. Then return here, or the app will continue automatically after verification.',
             textAlign: TextAlign.center,
-            style: const TextStyle(fontSize: 22, letterSpacing: 12, fontWeight: FontWeight.bold),
-            inputFormatters: [LengthLimitingTextInputFormatter(6)],
           ),
           const SizedBox(height: 30),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: _isLoading ? null : _verifyOtp,
-              child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('Verify & Proceed'),
+              onPressed: _isLoading ? null : _checkEmailVerificationNow,
+              child: _isLoading ? const CircularProgressIndicator(color: Colors.white) : const Text('I Have Verified'),
             ),
+          ),
+          const SizedBox(height: 12),
+          OutlinedButton(
+            onPressed: (_isLoading || _resendSecondsRemaining > 0)
+                ? null
+                : _resendVerificationEmail,
+            child: Text(
+              _resendSecondsRemaining > 0
+                  ? 'Resend in ${_formatResendTime(_resendSecondsRemaining)}'
+                  : 'Resend Verification Email',
+            ),
+          ),
+          TextButton(
+            onPressed: _isLoading
+                ? null
+                : () async {
+                    await AuthService.signOut();
+                    _verificationPollTimer?.cancel();
+                    if (mounted) {
+                      setState(() {
+                        _authState = AuthState.login;
+                        _isSigningUp = false;
+                      });
+                    }
+                  },
+            child: const Text('Back to Login'),
           ),
         ],
       ),
@@ -322,40 +540,74 @@ class _AuthScreenState extends State<AuthScreen> {
   // --- Logic Methods ---
   Future<void> _submitSignup() async {
     if (!_formKey.currentState!.validate()) return;
-    final messenger = ScaffoldMessenger.of(context);
 
     setState(() => _isLoading = true);
 
     try {
-      // First, send email OTP
-      final otpSent = await AuthService.sendEmailOTP(_emailController.text.trim());
+      final signupData = {
+        'first_name': _firstNameController.text.trim(),
+        'last_name': _lastNameController.text.trim(),
+        'phone': _phoneController.text.trim(),
+        'age': _ageController.text.trim(),
+        'email': _emailController.text.trim(),
+      };
+      await AuthStorageService.setPendingSignupData(signupData);
 
-      if (otpSent) {
-        if (!mounted) return;
-        setState(() {
-          _isLoading = false;
-          _authState = AuthState.otpVerification;
-        });
-      } else {
-        if (!mounted) return;
+      final response = await AuthService.signUp(
+        email: _emailController.text.trim(),
+        password: _passwordController.text.trim(),
+        firstName: _firstNameController.text.trim(),
+        lastName: _lastNameController.text.trim(),
+        phone: _phoneController.text.trim(),
+        age: int.parse(_ageController.text.trim()),
+      );
+
+      if (response.user != null) {
+        await response.user?.sendEmailVerification();
+        _startResendCountdown();
+        _startVerificationPolling();
         setState(() => _isLoading = false);
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Failed to send OTP. Please try again.')),
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Account created. Please verify your email to continue.')),
+          );
+          setState(() => _authState = AuthState.emailVerification);
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() => _isLoading = false);
+      String message;
+      if (e.code == 'email-already-in-use') {
+        message = 'This email is already registered. Please login instead.';
+        setState(() {
+          _authState = AuthState.login;
+          _isSigningUp = false;
+        });
+      } else if (e.code == 'invalid-email') {
+        message = 'Please enter a valid email address.';
+      } else if (e.code == 'weak-password') {
+        message = 'Password is too weak. Use at least 6 characters.';
+      } else {
+        message = e.message ?? 'Sign up failed. Please try again.';
+      }
+
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(message)),
         );
       }
     } catch (e) {
-      if (!mounted) return;
       setState(() => _isLoading = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text('Sign up failed: ${e.toString()}')),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Sign up failed. Please try again.')),
+        );
+      }
     }
   }
 
   Future<void> _submitLogin() async {
     if (!_formKey.currentState!.validate()) return;
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
 
     setState(() => _isLoading = true);
 
@@ -366,81 +618,137 @@ class _AuthScreenState extends State<AuthScreen> {
       );
 
       if (response.user != null) {
-        // Persist login state
-        await AuthStorageService.setLoggedIn(value: true, email: _emailController.text.trim());
-        if (!mounted) return;
+        final verified = await _ensureVerifiedAndProceed(response.user!);
         setState(() => _isLoading = false);
-        navigator.pushAndRemoveUntil(
-          MaterialPageRoute(builder: (context) => const LocationAccessScreen()),
-              (Route<dynamic> route) => false,
+        if (!verified && context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Please verify your email before login.')),
+          );
+          _startResendCountdown();
+          _startVerificationPolling();
+          setState(() => _authState = AuthState.emailVerification);
+        }
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() => _isLoading = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? 'Login failed. Please try again.')),
         );
       }
     } catch (e) {
-      if (!mounted) return;
       setState(() => _isLoading = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text('Login failed: ${e.toString()}')),
-      );
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Login failed: ${e.toString()}')),
+        );
+      }
     }
   }
 
-  Future<void> _verifyOtp() async {
-    final messenger = ScaffoldMessenger.of(context);
-    final navigator = Navigator.of(context);
-
-    if (_otpController.text.length != 6) {
-      messenger.showSnackBar(
-        const SnackBar(content: Text('Please enter a valid 6-digit OTP.')),
-      );
+  Future<void> _submitPasswordlessSignIn() async {
+    final email = _emailController.text.trim();
+    final emailValidationError = _validateEmail(email);
+    if (emailValidationError != null) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(emailValidationError)),
+        );
+      }
       return;
     }
 
     setState(() => _isLoading = true);
 
     try {
-      // Verify email OTP
-      final isOtpValid = await AuthService.verifyEmailOTP(_otpController.text.trim());
+      final currentBase = Uri.base;
+      final redirectUri = Uri(
+        scheme: currentBase.scheme,
+        host: currentBase.host,
+        port: currentBase.hasPort ? currentBase.port : null,
+        path: '/',
+      );
 
-      if (isOtpValid) {
-        // If OTP is valid, create user in Supabase
-        final response = await AuthService.signUp(
-          email: _emailController.text.trim(),
-          password: _passwordController.text.trim(),
-          firstName: _firstNameController.text.trim(),
-          lastName: _lastNameController.text.trim(),
-          phone: _phoneController.text.trim(),
-          age: int.parse(_ageController.text.trim()),
+      await AuthService.sendPasswordlessSignInLink(
+        email: email,
+        redirectUrl: redirectUri.toString(),
+      );
+      await AuthStorageService.setPendingSignInEmail(email);
+
+      setState(() => _isLoading = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Sign-in link sent to $email. Open it from your inbox.')),
         );
-
-        if (response.user != null) {
-          // Persist login state after successful sign-up
-          await AuthStorageService.setLoggedIn(value: true, email: _emailController.text.trim());
-          if (!mounted) return;
-          setState(() => _isLoading = false);
-          navigator.pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const LocationAccessScreen()),
-                (Route<dynamic> route) => false,
-          );
-        } else {
-          if (!mounted) return;
-          setState(() => _isLoading = false);
-          messenger.showSnackBar(
-            const SnackBar(content: Text('Failed to create account. Please try again.')),
-          );
-        }
-      } else {
-        if (!mounted) return;
-        setState(() => _isLoading = false);
-        messenger.showSnackBar(
-          const SnackBar(content: Text('Invalid OTP. Please try again.')),
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() => _isLoading = false);
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? 'Could not send sign-in link.')),
         );
       }
     } catch (e) {
-      if (!mounted) return;
       setState(() => _isLoading = false);
-      messenger.showSnackBar(
-        SnackBar(content: Text('OTP verification failed: ${e.toString()}')),
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Could not send sign-in link: ${e.toString()}')),
+        );
+      }
+    }
+  }
+
+  Future<void> _completePasswordlessSignInIfNeeded() async {
+    final incomingLink = Uri.base.toString();
+    if (!AuthService.isPasswordlessSignInLink(incomingLink)) return;
+
+    String? email = await AuthStorageService.getPendingSignInEmail();
+    email ??= await AuthStorageService.getSavedEmail();
+
+    if (email == null || email.isEmpty) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Enter your email in login screen and request a new sign-in link.')),
+        );
+      }
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    try {
+      final response = await AuthService.signInWithEmailLink(
+        email: email,
+        emailLink: incomingLink,
       );
+
+      await AuthStorageService.clearPendingSignInEmail();
+      await AuthStorageService.setLoggedIn(
+        value: true,
+        email: response.user?.email ?? email,
+      );
+
+      setState(() => _isLoading = false);
+      if (mounted) {
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LocationAccessScreen()),
+          (Route<dynamic> route) => false,
+        );
+      }
+    } on FirebaseAuthException catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(e.message ?? 'Email-link sign-in failed.')),
+        );
+      }
+    } catch (e) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Email-link sign-in failed: ${e.toString()}')),
+        );
+      }
     }
   }
 
@@ -457,7 +765,8 @@ class _AuthScreenState extends State<AuthScreen> {
           icon: const Icon(Icons.arrow_back),
           onPressed: () {
             setState(() {
-              if (_authState == AuthState.otpVerification) {
+              if (_authState == AuthState.emailVerification) {
+                _verificationPollTimer?.cancel();
                 _authState = _isSigningUp ? AuthState.signup : AuthState.login;
               } else {
                 _authState = AuthState.initial;
@@ -479,8 +788,8 @@ class _AuthScreenState extends State<AuthScreen> {
         return _buildSignupView();
       case AuthState.login:
         return _buildLoginView();
-      case AuthState.otpVerification:
-        return _buildOtpView();
+      case AuthState.emailVerification:
+        return _buildEmailVerificationView();
       case AuthState.initial:
         return _buildInitialView();
     }

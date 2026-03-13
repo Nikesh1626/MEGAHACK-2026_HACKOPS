@@ -1,6 +1,6 @@
 import 'package:http/http.dart' as http;
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:flutter/foundation.dart';
+import 'auth_service.dart';
 
 class WebhookService {
   static const String _webhookUrl = 'https://muhacks.app.n8n.cloud/webhook/cb7d7971-c81f-4472-8520-d8c64e37263d';
@@ -8,9 +8,9 @@ class WebhookService {
   /// Sends user data to the webhook when call button is clicked
   static Future<bool> sendUserDataToWebhook() async {
     try {
-      // Get current user from Supabase
-      final user = Supabase.instance.client.auth.currentUser;
-
+      final user = AuthService.getCurrentUser();
+      final profile = await AuthService.getCurrentUserProfile();
+      
       if (user == null) {
         if (kDebugMode) {
           print('No user logged in');
@@ -18,9 +18,10 @@ class WebhookService {
         return false;
       }
 
-      // Extract user data from metadata
-      final userName = '${user.userMetadata?['first_name'] ?? ''} ${user.userMetadata?['last_name'] ?? ''}'.trim();
-      final phoneNumber = user.userMetadata?['phone'] ?? '';
+      final firstName = profile?['first_name']?.toString() ?? '';
+      final lastName = profile?['last_name']?.toString() ?? '';
+      final userName = '$firstName $lastName'.trim();
+      final phoneNumber = profile?['phone']?.toString() ?? '';
       final email = user.email ?? '';
 
       // Build query parameters for GET request

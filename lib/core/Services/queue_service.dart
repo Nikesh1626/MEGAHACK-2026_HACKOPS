@@ -52,7 +52,7 @@ class QueueService {
       status: QueueStatus.confirmed,
       updates: [
         QueueUpdate(
-          message: 'Queue starting. Your position: $userPosition${_getOrdinalSuffix(userPosition)}',
+          message: 'Queue starting. Your position: ${userPosition}${_getOrdinalSuffix(userPosition)}',
           timestamp: DateTime.now(),
         ),
       ],

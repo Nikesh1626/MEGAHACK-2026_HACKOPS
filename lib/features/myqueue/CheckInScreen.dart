@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'dart:async';
 import '../../core/services/queue_service.dart';
@@ -183,7 +184,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     gradient: LinearGradient(
-                      colors: [Theme.of(context).colorScheme.primary.withValues(alpha: 0.15), Colors.grey[200]!],
+                      colors: [Theme.of(context).colorScheme.primary.withOpacity(0.15), Colors.grey[200]!],
                       begin: Alignment.topLeft,
                       end: Alignment.bottomRight,
                     ),
@@ -289,7 +290,6 @@ class _CheckInScreenState extends State<CheckInScreen> {
                           width: double.infinity,
                           child: OutlinedButton(
                             onPressed: () async {
-                              final messenger = ScaffoldMessenger.of(context);
                               final confirm = await showDialog<bool>(
                                 context: context,
                                 builder: (context) => AlertDialog(
@@ -312,17 +312,17 @@ class _CheckInScreenState extends State<CheckInScreen> {
                                   ],
                                 ),
                               );
-                              if (!mounted || confirm != true) return;
-
-                              await _geofencingService.stopGeofenceMonitoring();
-                              if (!mounted) return;
-
-                              setState(() {});
-                              messenger.showSnackBar(
-                                const SnackBar(
-                                  content: Text('Geofence monitoring stopped'),
-                                ),
-                              );
+                              if (confirm == true) {
+                                await _geofencingService.stopGeofenceMonitoring();
+                                setState(() {});
+                                if (mounted) {
+                                  ScaffoldMessenger.of(context).showSnackBar(
+                                    const SnackBar(
+                                      content: Text('Geofence monitoring stopped'),
+                                    ),
+                                  );
+                                }
+                              }
                             },
                             style: OutlinedButton.styleFrom(
                               foregroundColor: Colors.red,
@@ -361,7 +361,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.05),
+                      color: Colors.black.withOpacity(0.05),
                       blurRadius: 8,
                       offset: const Offset(0, 4),
                     ),
@@ -428,7 +428,7 @@ class _CheckInScreenState extends State<CheckInScreen> {
                             children: [
                               Chip(
                                 label: Text(_getStatusText(_currentQueue!.status)),
-                                backgroundColor: _getStatusColor(_currentQueue!.status).withValues(alpha: 0.15),
+                                backgroundColor: _getStatusColor(_currentQueue!.status).withOpacity(0.15),
                                 labelStyle: TextStyle(
                                   fontWeight: FontWeight.w600,
                                   color: _getStatusColor(_currentQueue!.status),
@@ -517,14 +517,13 @@ class _CheckInScreenState extends State<CheckInScreen> {
                     ),
                   ),
                 );
-              }),
+              }).toList(),
               const SizedBox(height: 60),
               // Cancel button
               SizedBox(
                 width: double.infinity,
                 child: OutlinedButton(
                   onPressed: () async {
-                    final messenger = ScaffoldMessenger.of(context);
                     final confirm = await showDialog<bool>(
                       context: context,
                       builder: (context) => AlertDialog(
@@ -548,16 +547,16 @@ class _CheckInScreenState extends State<CheckInScreen> {
                       ),
                     );
 
-                    if (!mounted || confirm != true) return;
-
-                    await _queueService.cancelQueue();
-                    if (!mounted) return;
-
-                    messenger.showSnackBar(
-                      const SnackBar(
-                        content: Text('Queue cancelled successfully'),
-                      ),
-                    );
+                    if (confirm == true) {
+                      await _queueService.cancelQueue();
+                      if (mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(
+                            content: Text('Queue cancelled successfully'),
+                          ),
+                        );
+                      }
+                    }
                   },
                   style: OutlinedButton.styleFrom(
                     padding: const EdgeInsets.symmetric(vertical: 16),

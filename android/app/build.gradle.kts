@@ -6,23 +6,25 @@ plugins {
 }
 
 android {
-    namespace = "com.example.mega_hack"
+    namespace = "com.example.well_queue"
     compileSdk = flutter.compileSdkVersion
-    ndkVersion = flutter.ndkVersion
+    ndkVersion = "27.0.12077973"
 
     compileOptions {
+        sourceCompatibility = JavaVersion.VERSION_11
+        targetCompatibility = JavaVersion.VERSION_11
+        // Enable core library desugaring required by some AARs (e.g. flutter_local_notifications)
+        // See: https://developer.android.com/studio/write/java8-support
         isCoreLibraryDesugaringEnabled = true
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
     }
 
     kotlinOptions {
-        jvmTarget = JavaVersion.VERSION_17.toString()
+        jvmTarget = JavaVersion.VERSION_11.toString()
     }
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.example.mega_hack"
+        applicationId = "com.example.well_queue"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion
@@ -39,11 +41,13 @@ android {
         }
     }
 }
-
 flutter {
     source = "../.."
 }
 
 dependencies {
-    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // Required for core library desugaring (Java 8+ APIs in older runtimes)
+    // Use a recent desugar_jdk_libs version to satisfy AAR requirements (>= 1.2.2)
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.0.3")
 }
+

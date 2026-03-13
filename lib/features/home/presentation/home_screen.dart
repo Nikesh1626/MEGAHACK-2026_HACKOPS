@@ -3,9 +3,9 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 // 1. Import your new screen
-import '../../myqueue/check_in_screen.dart';
+import '../../myqueue/CheckInScreen.dart';
 import '../../profile/profile_screen.dart';
-import 'widgets/custom_search_bar.dart';
+import 'widgets/Custom_Search_Bar.dart';
 import 'widgets/nearby_clinics_list.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -155,7 +155,7 @@ class _HomeContentState extends State<_HomeContent> {
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.grey.withValues(alpha: 0.3),
+                  color: Colors.grey.withOpacity(0.3),
                   spreadRadius: 1,
                   blurRadius: 5,
                   offset: const Offset(0, 3),

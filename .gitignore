@@ -27,11 +27,44 @@ migrate_working_dir/
 **/doc/api/
 **/ios/Flutter/.last_build_id
 .dart_tool/
+.flutter-plugins
 .flutter-plugins-dependencies
+.packages
+.merlin
 .pub-cache/
 .pub/
 /build/
 /coverage/
+
+# Platform-specific ephemeral build dirs
+android/.gradle/
+android/app/build/
+android/key.properties
+android/local.properties
+
+ios/.symlinks/
+ios/Flutter/App.framework
+ios/Flutter/Flutter.framework
+ios/Flutter/Generated.xcconfig
+ios/Flutter/engine/
+ios/Flutter/ephemeral/
+ios/Runner/GeneratedPluginRegistrant.*
+
+macos/Flutter/ephemeral/
+macos/Flutter/GeneratedPluginRegistrant.swift
+
+linux/flutter/ephemeral/
+linux/flutter/generated_plugin_registrant.*
+
+windows/flutter/ephemeral/
+windows/flutter/generated_plugin_registrant.*
+
+web/.dart_tool/
+
+# Secrets
+*.jks
+*.keystore
+*.p12
 
 # Symbolication related
 app.*.symbols
