@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "643662839874",
+    "project_id": "wellqueue-509f7",
+    "storage_bucket": "wellqueue-509f7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:643662839874:android:5969cbb1aa36b4a3fceddb",
+        "android_client_info": {
+          "package_name": "com.example.well_queue"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD58pH96nY9LZIOlHg0whzYv6Mz5ZYEY0Q"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

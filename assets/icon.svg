@@ -1,0 +1,26 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background Circle -->
+  <circle cx="512" cy="512" r="512" fill="#1B5E20"/>
+  
+  <!-- Medical Cross -->
+  <rect x="400" y="200" width="224" height="80" rx="40" fill="white"/>
+  <rect x="480" y="120" width="64" height="240" rx="32" fill="white"/>
+  
+  <!-- Queue Dots -->
+  <circle cx="200" cy="300" r="24" fill="white" opacity="0.8"/>
+  <circle cx="250" cy="300" r="24" fill="white" opacity="0.6"/>
+  <circle cx="300" cy="300" r="24" fill="white" opacity="0.4"/>
+  
+  <circle cx="724" cy="300" r="24" fill="white" opacity="0.4"/>
+  <circle cx="774" cy="300" r="24" fill="white" opacity="0.6"/>
+  <circle cx="824" cy="300" r="24" fill="white" opacity="0.8"/>
+  
+  <!-- Heart Symbol -->
+  <path d="M512 700 C512 700, 400 600, 400 500 C400 450, 450 400, 512 400 C574 400, 624 450, 624 500 C624 600, 512 700, 512 700 Z" fill="white" opacity="0.9"/>
+  
+  <!-- Clock for Wait Time -->
+  <circle cx="512" cy="800" r="60" fill="white" opacity="0.7"/>
+  <circle cx="512" cy="800" r="4" fill="#1B5E20"/>
+  <line x1="512" y1="800" x2="512" y2="750" stroke="#1B5E20" stroke-width="6" stroke-linecap="round"/>
+  <line x1="512" y1="800" x2="540" y2="800" stroke="#1B5E20" stroke-width="4" stroke-linecap="round"/>
+</svg>
