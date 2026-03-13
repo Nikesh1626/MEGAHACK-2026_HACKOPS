@@ -21,7 +21,6 @@ class GeofencingService {
   
   // Geofence configuration
   static const double _geofenceRadiusMeters = 50.0; // 50 meters radius
-  static const int _locationUpdateIntervalSeconds = 10; // Check every 10 seconds
   
   // Active geofence data
   String? _activeClinicId;
@@ -34,7 +33,7 @@ class GeofencingService {
 
   /// Initialize notification system
   Future<void> initializeNotifications() async {
-    const androidSettings = AndroidInitializationSettings('@drawable/ic_notification');
+    const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
     const iosSettings = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
@@ -50,9 +49,6 @@ class GeofencingService {
       initSettings,
       onDidReceiveNotificationResponse: _onNotificationTapped,
     );
-    
-    // Request notification permission on supported platforms (Android 13+, iOS)
-    await requestNotificationPermission();
   }
   /// Request notification permissions (Android 13+, iOS)
   Future<bool> requestNotificationPermission() async {
@@ -218,7 +214,7 @@ class GeofencingService {
       importance: Importance.high,
       priority: Priority.high,
       ticker: 'You have arrived!',
-      icon: '@drawable/ic_notification',
+      icon: '@mipmap/ic_launcher',
       enableVibration: true,
       playSound: true,
     );
@@ -256,7 +252,7 @@ class GeofencingService {
       importance: Importance.max,
       priority: Priority.max,
       ticker: 'Queue update',
-      icon: '@drawable/ic_notification',
+      icon: '@mipmap/ic_launcher',
       enableVibration: true,
       playSound: true,
     );
@@ -292,7 +288,7 @@ class GeofencingService {
       importance: Importance.max,
       priority: Priority.max,
       ticker: 'Queue arrived',
-      icon: '@drawable/ic_notification',
+      icon: '@mipmap/ic_launcher',
       enableVibration: true,
       playSound: true,
       fullScreenIntent: true,

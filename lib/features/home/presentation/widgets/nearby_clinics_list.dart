@@ -7,7 +7,7 @@ class NearbyClinicsList extends StatefulWidget {
   const NearbyClinicsList({super.key});
 
   @override
-  _NearbyClinicsListState createState() => _NearbyClinicsListState();
+  State<NearbyClinicsList> createState() => _NearbyClinicsListState();
 }
 
 class _NearbyClinicsListState extends State<NearbyClinicsList> {

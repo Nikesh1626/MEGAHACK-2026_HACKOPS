@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import '../../../core/services/webhook_service.dart';
+import '../../../core/Services/webhook_service.dart';
 import '../../../core/services/queue_service.dart';
 import '../../../core/services/geofencing_service.dart';
-import '../../myqueue/CheckInScreen.dart';
+import '../../myqueue/check_in_screen.dart';
 
 class ClinicDetailScreen extends StatefulWidget {
   final String clinicName;
@@ -375,7 +375,7 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
                             _useGeofencing = value;
                           });
                         },
-                        activeColor: Colors.teal,
+                        activeThumbColor: Colors.teal,
                       ),
                     ],
                   ),

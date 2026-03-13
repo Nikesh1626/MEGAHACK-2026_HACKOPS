@@ -1,38 +1,70 @@
 import 'package:flutter/material.dart';
-import 'features/LocationAccessScreen/location_access-screen.dart';
+import 'features/LocationAccessScreen/location_access_screen.dart';
 import 'features/auth/presentation/auth_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'core/services/geofencing_service.dart';
 import 'core/services/auth_storage_service.dart';
-import 'features/LocationAccessScreen/location_access_screen.dart';
 
-Future<void> main() async{
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Initialize Supabase
-  await Supabase.initialize(
-    url: 'https://wzgcwhrgaqczcdagxblm.supabase.co',
-    anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6Z2N3aHJnYXFjemNkYWd4YmxtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg5NDgxMDksImV4cCI6MjA3NDUyNDEwOX0.W0fxJKifTEknhp4aWWAf0HQTH2nnfBpn__8Gf8Tf-xY',
-  );
-
-  // Initialize geofencing service and notifications
-  final geofencingService = GeofencingService();
-  await geofencingService.initializeNotifications();
-
-  // Resume geofencing if it was active before app restart
-  await geofencingService.resumeGeofenceMonitoring();
-
-  // Determine initial route based on persisted login and current session
-  final persistedLogin = await AuthStorageService.isLoggedIn();
-  final hasSession = Supabase.instance.client.auth.currentSession != null;
-  runApp(MyApp(
-    startLoggedIn: persistedLogin && hasSession,
-  ));
+  // Render UI first; run async bootstrapping from within the app.
+  runApp(const MyApp());
 }
 
-class MyApp extends StatelessWidget {
-  final bool startLoggedIn;
-  const MyApp({super.key, this.startLoggedIn = false});
+Future<bool> _bootstrapApp() async {
+  var supabaseReady = false;
+
+  try {
+    await Supabase.initialize(
+      url: 'https://wzgcwhrgaqczcdagxblm.supabase.co',
+      anonKey:
+          'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Ind6Z2N3aHJnYXFjemNkYWd4YmxtIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg5NDgxMDksImV4cCI6MjA3NDUyNDEwOX0.W0fxJKifTEknhp4aWWAf0HQTH2nnfBpn__8Gf8Tf-xY',
+    ).timeout(const Duration(seconds: 15));
+    supabaseReady = true;
+  } catch (e) {
+    debugPrint('Supabase initialization failed: $e');
+  }
+
+  final geofencingService = GeofencingService();
+  try {
+    await geofencingService
+        .initializeNotifications()
+        .timeout(const Duration(seconds: 8));
+  } catch (e) {
+    debugPrint('Notification initialization failed: $e');
+  }
+
+  try {
+    await geofencingService
+        .resumeGeofenceMonitoring()
+        .timeout(const Duration(seconds: 8));
+  } catch (e) {
+    debugPrint('Geofence restore failed: $e');
+  }
+
+  final persistedLogin = await AuthStorageService.isLoggedIn();
+  final hasSession =
+      supabaseReady && Supabase.instance.client.auth.currentSession != null;
+  return persistedLogin && hasSession;
+}
+
+class MyApp extends StatefulWidget {
+  const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  late final Future<bool> _startLoggedInFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _startLoggedInFuture = _bootstrapApp();
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -76,8 +108,31 @@ class MyApp extends StatelessWidget {
           ),
         ),
       ),
-      home: startLoggedIn ? const LocationAccessScreen() : const AuthScreen(),
+      home: FutureBuilder<bool>(
+        future: _startLoggedInFuture,
+        builder: (context, snapshot) {
+          if (snapshot.connectionState != ConnectionState.done) {
+            return const _StartupScreen();
+          }
+
+          return snapshot.data == true
+              ? const LocationAccessScreen()
+              : const AuthScreen();
+        },
+      ),
     );
   }
 }
-//frf
+
+class _StartupScreen extends StatelessWidget {
+  const _StartupScreen();
+
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(
+        child: CircularProgressIndicator(),
+      ),
+    );
+  }
+}

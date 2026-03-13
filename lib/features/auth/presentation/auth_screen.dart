@@ -322,6 +322,7 @@ class _AuthScreenState extends State<AuthScreen> {
   // --- Logic Methods ---
   Future<void> _submitSignup() async {
     if (!_formKey.currentState!.validate()) return;
+    final messenger = ScaffoldMessenger.of(context);
 
     setState(() => _isLoading = true);
 
@@ -330,30 +331,31 @@ class _AuthScreenState extends State<AuthScreen> {
       final otpSent = await AuthService.sendEmailOTP(_emailController.text.trim());
 
       if (otpSent) {
+        if (!mounted) return;
         setState(() {
           _isLoading = false;
           _authState = AuthState.otpVerification;
         });
       } else {
+        if (!mounted) return;
         setState(() => _isLoading = false);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Failed to send OTP. Please try again.')),
-          );
-        }
-      }
-    } catch (e) {
-      setState(() => _isLoading = false);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Sign up failed: ${e.toString()}')),
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Failed to send OTP. Please try again.')),
         );
       }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Sign up failed: ${e.toString()}')),
+      );
     }
   }
 
   Future<void> _submitLogin() async {
     if (!_formKey.currentState!.validate()) return;
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
 
     setState(() => _isLoading = true);
 
@@ -366,27 +368,28 @@ class _AuthScreenState extends State<AuthScreen> {
       if (response.user != null) {
         // Persist login state
         await AuthStorageService.setLoggedIn(value: true, email: _emailController.text.trim());
+        if (!mounted) return;
         setState(() => _isLoading = false);
-        if (context.mounted) {
-          Navigator.of(context).pushAndRemoveUntil(
-            MaterialPageRoute(builder: (context) => const LocationAccessScreen()),
-                (Route<dynamic> route) => false,
-          );
-        }
-      }
-    } catch (e) {
-      setState(() => _isLoading = false);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Login failed: ${e.toString()}')),
+        navigator.pushAndRemoveUntil(
+          MaterialPageRoute(builder: (context) => const LocationAccessScreen()),
+              (Route<dynamic> route) => false,
         );
       }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('Login failed: ${e.toString()}')),
+      );
     }
   }
 
   Future<void> _verifyOtp() async {
+    final messenger = ScaffoldMessenger.of(context);
+    final navigator = Navigator.of(context);
+
     if (_otpController.text.length != 6) {
-      ScaffoldMessenger.of(context).showSnackBar(
+      messenger.showSnackBar(
         const SnackBar(content: Text('Please enter a valid 6-digit OTP.')),
       );
       return;
@@ -412,36 +415,32 @@ class _AuthScreenState extends State<AuthScreen> {
         if (response.user != null) {
           // Persist login state after successful sign-up
           await AuthStorageService.setLoggedIn(value: true, email: _emailController.text.trim());
+          if (!mounted) return;
           setState(() => _isLoading = false);
-          if (context.mounted) {
-            Navigator.of(context).pushAndRemoveUntil(
-              MaterialPageRoute(builder: (context) => const LocationAccessScreen()),
-                  (Route<dynamic> route) => false,
-            );
-          }
+          navigator.pushAndRemoveUntil(
+            MaterialPageRoute(builder: (context) => const LocationAccessScreen()),
+                (Route<dynamic> route) => false,
+          );
         } else {
+          if (!mounted) return;
           setState(() => _isLoading = false);
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Failed to create account. Please try again.')),
-            );
-          }
-        }
-      } else {
-        setState(() => _isLoading = false);
-        if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Invalid OTP. Please try again.')),
+          messenger.showSnackBar(
+            const SnackBar(content: Text('Failed to create account. Please try again.')),
           );
         }
-      }
-    } catch (e) {
-      setState(() => _isLoading = false);
-      if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('OTP verification failed: ${e.toString()}')),
+      } else {
+        if (!mounted) return;
+        setState(() => _isLoading = false);
+        messenger.showSnackBar(
+          const SnackBar(content: Text('Invalid OTP. Please try again.')),
         );
       }
+    } catch (e) {
+      if (!mounted) return;
+      setState(() => _isLoading = false);
+      messenger.showSnackBar(
+        SnackBar(content: Text('OTP verification failed: ${e.toString()}')),
+      );
     }
   }
 
