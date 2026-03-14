@@ -1,9 +1,10 @@
 import 'package:http/http.dart' as http;
 import 'package:flutter/foundation.dart';
+import '../constants/firestore_schema.dart';
 import 'auth_service.dart';
 
 class WebhookService {
-  static const String _webhookUrl = 'https://muhacks.app.n8n.cloud/webhook/cb7d7971-c81f-4472-8520-d8c64e37263d';
+  static const String _webhookUrl = 'https://megahack.app.n8n.cloud/webhook/cb7d7971-c81f-4472-8520-d8c64e37263d';
 
   /// Sends user data to the webhook when call button is clicked
   static Future<bool> sendUserDataToWebhook() async {
@@ -18,10 +19,10 @@ class WebhookService {
         return false;
       }
 
-      final firstName = profile?['first_name']?.toString() ?? '';
-      final lastName = profile?['last_name']?.toString() ?? '';
+      final firstName = profile?[FsFields.firstName]?.toString() ?? '';
+      final lastName = profile?[FsFields.lastName]?.toString() ?? '';
       final userName = '$firstName $lastName'.trim();
-      final phoneNumber = profile?['phone']?.toString() ?? '';
+      final phoneNumber = profile?[FsFields.phone]?.toString() ?? '';
       final email = user.email ?? '';
 
       // Build query parameters for GET request

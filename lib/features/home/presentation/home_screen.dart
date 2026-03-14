@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart' hide SearchBar;
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import '../../../core/model/clinic.dart';
+import '../data/clinic_repository.dart';
 // 1. Import your new screen
 import '../../myqueue/CheckInScreen.dart';
 import '../../profile/profile_screen.dart';
@@ -86,13 +90,15 @@ class _HomeContent extends StatefulWidget {
 class _HomeContentState extends State<_HomeContent> {
   LatLng? _currentLocation;
   bool _isLoadingLocation = true;
-  List<Map<String, dynamic>> _nearbyClinics = [];
+  final ClinicRepository _clinicRepository = ClinicRepository();
+  StreamSubscription<List<Clinic>>? _clinicSubscription;
+  List<Clinic> _nearbyClinics = [];
 
   @override
   void initState() {
     super.initState();
     _getCurrentLocation();
-    _loadNearbyClinics();
+    _subscribeNearbyClinics();
   }
 
   Future<void> _getCurrentLocation() async {
@@ -111,32 +117,27 @@ class _HomeContentState extends State<_HomeContent> {
         _isLoadingLocation = false;
       });
       // Default to a location if permission denied or error
-      _currentLocation = const LatLng(28.6139, 77.2090); // New Delhi coordinates
+      _currentLocation =
+          const LatLng(28.6139, 77.2090); // New Delhi coordinates
     }
   }
 
-  Future<void> _loadNearbyClinics() async {
-    // Mock clinic data for map markers
-    _nearbyClinics = [
-      {
-        'name': 'Apollo Hospitals',
-        'lat': 28.6139,
-        'lng': 77.2090,
-        'waitTime': 15,
+  void _subscribeNearbyClinics() {
+    _clinicSubscription = _clinicRepository.streamNearbyClinics().listen(
+      (clinics) {
+        if (!mounted) return;
+        setState(() {
+          _nearbyClinics = clinics;
+        });
       },
-      {
-        'name': 'Fortis Healthcare',
-        'lat': 28.6140,
-        'lng': 77.2100,
-        'waitTime': 25,
-      },
-      {
-        'name': 'Max Super Speciality Hospital',
-        'lat': 28.6150,
-        'lng': 77.2110,
-        'waitTime': 35,
-      },
-    ];
+      onError: (_) {},
+    );
+  }
+
+  @override
+  void dispose() {
+    _clinicSubscription?.cancel();
+    super.dispose();
   }
 
   @override
@@ -178,7 +179,8 @@ class _HomeContentState extends State<_HomeContent> {
                           ),
                           children: [
                             TileLayer(
-                              urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                              urlTemplate:
+                                  'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                               userAgentPackageName: 'com.example.well_queue',
                             ),
                             MarkerLayer(
@@ -196,34 +198,38 @@ class _HomeContentState extends State<_HomeContent> {
                                 ),
                                 // Clinic markers
                                 ..._nearbyClinics.map((clinic) => Marker(
-                                  point: LatLng(
-                                    clinic['lat'] as double,
-                                    clinic['lng'] as double,
-                                  ),
-                                  width: 30,
-                                  height: 30,
-                                  child: GestureDetector(
-                                    onTap: () {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          content: Text('${clinic['name']} - ${clinic['waitTime']} min wait'),
+                                      point: LatLng(
+                                        clinic.latitude,
+                                        clinic.longitude,
+                                      ),
+                                      width: 30,
+                                      height: 30,
+                                      child: GestureDetector(
+                                        onTap: () {
+                                          ScaffoldMessenger.of(context)
+                                              .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                  '${clinic.name} - ${clinic.waitTimeMinutes} min wait'),
+                                            ),
+                                          );
+                                        },
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            color: Colors.teal,
+                                            borderRadius:
+                                                BorderRadius.circular(15),
+                                            border: Border.all(
+                                                color: Colors.white, width: 2),
+                                          ),
+                                          child: const Icon(
+                                            Icons.local_hospital,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
                                         ),
-                                      );
-                                    },
-                                    child: Container(
-                                      decoration: BoxDecoration(
-                                        color: Colors.teal,
-                                        borderRadius: BorderRadius.circular(15),
-                                        border: Border.all(color: Colors.white, width: 2),
                                       ),
-                                      child: const Icon(
-                                        Icons.local_hospital,
-                                        color: Colors.white,
-                                        size: 20,
-                                      ),
-                                    ),
-                                  ),
-                                )),
+                                    )),
                               ],
                             ),
                           ],

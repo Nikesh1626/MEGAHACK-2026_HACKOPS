@@ -11,18 +11,12 @@ class NearbyClinicsList extends StatefulWidget {
 }
 
 class _NearbyClinicsListState extends State<NearbyClinicsList> {
-  late Future<List<Clinic>> _clinicsFuture;
-
-  @override
-  void initState() {
-    super.initState();
-    _clinicsFuture = ClinicRepository().getNearbyClinics();
-  }
+  final ClinicRepository _repository = ClinicRepository();
 
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<List<Clinic>>(
-      future: _clinicsFuture,
+    return StreamBuilder<List<Clinic>>(
+      stream: _repository.streamNearbyClinics(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Center(child: CircularProgressIndicator());

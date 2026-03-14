@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../../core/constants/firestore_schema.dart';
 import '../../core/services/auth_service.dart';
 import '../auth/presentation/auth_screen.dart';
 import '../../core/services/auth_storage_service.dart';
@@ -39,11 +40,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
           profile = await AuthService.getCurrentUserProfile();
         } catch (_) {
           profile = {
-            'first_name': (user.displayName ?? '').split(' ').first,
-            'last_name': (user.displayName ?? '').split(' ').skip(1).join(' '),
-            'phone': '',
-            'age': null,
-            'email': user.email,
+            FsFields.firstName: (user.displayName ?? '').split(' ').first,
+            FsFields.lastName: (user.displayName ?? '').split(' ').skip(1).join(' '),
+            FsFields.phone: '',
+            FsFields.age: null,
+            FsFields.email: user.email,
           };
         }
 
@@ -144,12 +145,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
     }
 
-    final firstName = _userMetadata?['first_name'] ?? '';
-    final lastName = _userMetadata?['last_name'] ?? '';
+    final firstName = _userMetadata?[FsFields.firstName] ?? '';
+    final lastName = _userMetadata?[FsFields.lastName] ?? '';
     final fullName = '$firstName $lastName'.trim();
     final email = _currentUser!.email ?? '';
-    final phone = _userMetadata?['phone'] ?? '';
-    final age = _userMetadata?['age']?.toString() ?? '';
+    final phone = _userMetadata?[FsFields.phone] ?? '';
+    final age = _userMetadata?[FsFields.age]?.toString() ?? '';
     final createdAt = _currentUser!.metadata.creationTime?.toIso8601String();
     
     // Get initials for avatar

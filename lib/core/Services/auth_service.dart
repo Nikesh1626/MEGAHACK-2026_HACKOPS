@@ -1,6 +1,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:email_otp/email_otp.dart';
+import '../constants/firestore_schema.dart';
 
 class AuthService {
   static final FirebaseAuth _firebaseAuth = FirebaseAuth.instance;
@@ -25,16 +26,18 @@ class AuthService {
 
     if (response.user != null) {
       try {
-        await _firestore.collection('users').doc(response.user!.uid).set({
-          'first_name': firstName,
-          'last_name': lastName,
-          'phone': phone,
-          'age': age,
-          'email': email,
-          'created_at': FieldValue.serverTimestamp(),
+        await _firestore
+            .collection(FsCollections.users)
+            .doc(response.user!.uid)
+            .set({
+          FsFields.firstName: firstName,
+          FsFields.lastName: lastName,
+          FsFields.phone: phone,
+          FsFields.age: age,
+          FsFields.email: email,
+          FsFields.createdAt: FieldValue.serverTimestamp(),
         });
-      } catch (_) {
-      }
+      } catch (_) {}
     }
 
     return response;
@@ -50,7 +53,7 @@ class AuthService {
         otpLength: 6,
         otpType: OTPType.digitsOnly,
       );
-      
+
       bool result = await _emailOTP.sendOTP();
       return result;
     } catch (e) {
@@ -133,13 +136,13 @@ class AuthService {
     required int age,
     required String email,
   }) async {
-    await _firestore.collection('users').doc(uid).set({
-      'first_name': firstName,
-      'last_name': lastName,
-      'phone': phone,
-      'age': age,
-      'email': email,
-      'created_at': FieldValue.serverTimestamp(),
+    await _firestore.collection(FsCollections.users).doc(uid).set({
+      FsFields.firstName: firstName,
+      FsFields.lastName: lastName,
+      FsFields.phone: phone,
+      FsFields.age: age,
+      FsFields.email: email,
+      FsFields.createdAt: FieldValue.serverTimestamp(),
     }, SetOptions(merge: true));
   }
 
@@ -172,19 +175,19 @@ class AuthService {
     if (user == null) return null;
 
     try {
-      final doc = await _firestore.collection('users').doc(user.uid).get();
+      final doc =
+          await _firestore.collection(FsCollections.users).doc(user.uid).get();
       if (doc.exists) {
         return doc.data();
       }
-    } catch (_) {
-    }
+    } catch (_) {}
 
     return {
-      'first_name': (user.displayName ?? '').split(' ').first,
-      'last_name': (user.displayName ?? '').split(' ').skip(1).join(' '),
-      'phone': '',
-      'age': null,
-      'email': user.email,
+      FsFields.firstName: (user.displayName ?? '').split(' ').first,
+      FsFields.lastName: (user.displayName ?? '').split(' ').skip(1).join(' '),
+      FsFields.phone: '',
+      FsFields.age: null,
+      FsFields.email: user.email,
     };
   }
 }

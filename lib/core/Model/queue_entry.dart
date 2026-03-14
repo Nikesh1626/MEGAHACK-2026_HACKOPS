@@ -1,3 +1,5 @@
+import '../constants/firestore_schema.dart';
+
 class QueueEntry {
   final String id;
   final String clinicId;
@@ -51,31 +53,35 @@ class QueueEntry {
 
   Map<String, dynamic> toJson() {
     return {
-      'id': id,
-      'clinicId': clinicId,
-      'clinicName': clinicName,
-      'userId': userId,
-      'joinedAt': joinedAt.toIso8601String(),
-      'position': position,
-      'estimatedWaitMinutes': estimatedWaitMinutes,
-      'userTargetPosition': userTargetPosition,
-      'status': status.name,
-      'updates': updates.map((u) => u.toJson()).toList(),
+      FsFields.id: id,
+      FsFields.clinicId: clinicId,
+      FsFields.clinicName: clinicName,
+      FsFields.userId: userId,
+      FsFields.joinedAt: joinedAt.toIso8601String(),
+      FsFields.position: position,
+      FsFields.estimatedWaitMinutes: estimatedWaitMinutes,
+      FsFields.userTargetPosition: userTargetPosition,
+      FsFields.status: status.name,
+      FsFields.updates: updates.map((u) => u.toJson()).toList(),
     };
   }
 
   factory QueueEntry.fromJson(Map<String, dynamic> json) {
     return QueueEntry(
-      id: json['id'],
-      clinicId: json['clinicId'],
-      clinicName: json['clinicName'],
-      userId: json['userId'],
-      joinedAt: DateTime.parse(json['joinedAt']),
-      position: json['position'],
-      estimatedWaitMinutes: json['estimatedWaitMinutes'],
-      userTargetPosition: json['userTargetPosition'] ?? (json['userTargetPosition'] as int? ?? 4),
-      status: QueueStatus.values.firstWhere((e) => e.name == json['status']),
-      updates: (json['updates'] as List?)
+      id: json[FsFields.id],
+      clinicId: json[FsFields.clinicId],
+      clinicName: json[FsFields.clinicName],
+      userId: json[FsFields.userId],
+      joinedAt: DateTime.parse(json[FsFields.joinedAt]),
+      position: json[FsFields.position],
+      estimatedWaitMinutes: json[FsFields.estimatedWaitMinutes],
+      userTargetPosition:
+          json[FsFields.userTargetPosition] ??
+          (json[FsFields.userTargetPosition] as int? ?? 4),
+      status: QueueStatus.values.firstWhere(
+        (e) => e.name == json[FsFields.status],
+      ),
+      updates: (json[FsFields.updates] as List?)
               ?.map((u) => QueueUpdate.fromJson(u))
               .toList() ??
           [],
@@ -102,15 +108,15 @@ class QueueUpdate {
 
   Map<String, dynamic> toJson() {
     return {
-      'message': message,
-      'timestamp': timestamp.toIso8601String(),
+      FsFields.message: message,
+      FsFields.timestamp: timestamp.toIso8601String(),
     };
   }
 
   factory QueueUpdate.fromJson(Map<String, dynamic> json) {
     return QueueUpdate(
-      message: json['message'],
-      timestamp: DateTime.parse(json['timestamp']),
+      message: json[FsFields.message],
+      timestamp: DateTime.parse(json[FsFields.timestamp]),
     );
   }
 }

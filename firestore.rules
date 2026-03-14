@@ -1,0 +1,65 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/admin_users/$(request.auth.uid));
+    }
+
+    function isQueueOwner() {
+      return isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow read: if isAdmin() || (isSignedIn() && request.auth.uid == userId);
+      allow create, update: if isSignedIn() && request.auth.uid == userId;
+      allow delete: if isAdmin();
+    }
+
+    match /admin_users/{adminId} {
+      // Any signed-in user may create their own admin profile document during signup.
+      allow create: if isSignedIn() && request.auth.uid == adminId;
+      // Admins can view all admin profiles; users can always view their own.
+      allow read: if (isSignedIn() && request.auth.uid == adminId) || isAdmin();
+      allow update, delete: if isAdmin() || (isSignedIn() && request.auth.uid == adminId);
+    }
+
+    match /clinics/{clinicId} {
+      // Clinics can be read by app users and admins.
+      allow read: if isSignedIn();
+      // Only admins can change clinic master data.
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /queue_entries/{entryId} {
+      // Signed-in users can read queue state (needed for live queue position and joins).
+      allow read: if isSignedIn();
+
+      // Owner creates own queue entry; admins may create entries as well.
+      allow create: if isSignedIn() && (
+        isAdmin() || request.resource.data.userId == request.auth.uid
+      );
+
+      // Admins can update anything. Owner can only cancel their own queue.
+      allow update: if isAdmin() || (
+        isQueueOwner() &&
+        request.resource.data.userId == resource.data.userId &&
+        request.resource.data.status == 'cancelled' &&
+        request.resource.data.diff(resource.data).changedKeys().hasOnly([
+          'status',
+          'updatedAt'
+        ])
+      );
+
+      allow delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

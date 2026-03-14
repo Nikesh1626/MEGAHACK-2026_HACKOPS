@@ -1,13 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../../../core/model/clinic.dart';
 import '../../../core/services/webhook_service.dart';
 import '../../../core/services/queue_service.dart';
 import '../../../core/services/geofencing_service.dart';
 import '../../myqueue/CheckInScreen.dart';
 
 class ClinicDetailScreen extends StatefulWidget {
-  final String clinicName;
+  final Clinic clinic;
 
-  const ClinicDetailScreen({super.key, required this.clinicName});
+  const ClinicDetailScreen({super.key, required this.clinic});
 
   @override
   State<ClinicDetailScreen> createState() => _ClinicDetailScreenState();
@@ -29,13 +31,13 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
     try {
       // Send webhook with user data
       final success = await WebhookService.sendUserDataToWebhook();
-      
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text(success 
-              ? 'Calling clinic... Webhook sent successfully!' 
-              : 'Calling clinic... (Webhook failed)'),
+            content: Text(success
+                ? 'Calling clinic... Webhook sent successfully!'
+                : 'Calling clinic... (Webhook failed)'),
             backgroundColor: success ? Colors.green : Colors.orange,
           ),
         );
@@ -62,18 +64,17 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
     });
 
     try {
-      // Mock clinic coordinates (in production, these would come from your database)
-      final clinicId = widget.clinicName.toLowerCase().replaceAll(' ', '_');
-      final clinicLat = 28.6139 + (clinicId.hashCode % 10) * 0.001; // Mock latitude
-      final clinicLng = 77.2090 + (clinicId.hashCode % 10) * 0.001; // Mock longitude
-      final userId = 'user_${DateTime.now().millisecondsSinceEpoch}';
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw StateError('Please sign in to setup geofence monitoring');
+      }
 
       final success = await _geofencingService.startGeofenceMonitoring(
-        clinicId: clinicId,
-        clinicName: widget.clinicName,
-        latitude: clinicLat,
-        longitude: clinicLng,
-        userId: userId,
+        clinicId: widget.clinic.id,
+        clinicName: widget.clinic.name,
+        latitude: widget.clinic.latitude,
+        longitude: widget.clinic.longitude,
+        userId: user.uid,
       );
 
       if (mounted) {
@@ -87,13 +88,14 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
               duration: Duration(seconds: 4),
             ),
           );
-          
+
           // Navigate back
           Navigator.of(context).pop();
         } else {
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
-              content: Text('Failed to activate geofence. Please check location permissions.'),
+              content: Text(
+                  'Failed to activate geofence. Please check location permissions.'),
               backgroundColor: Colors.red,
             ),
           );
@@ -123,14 +125,15 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
     });
 
     try {
-      // Generate a unique clinic ID from clinic name
-      final clinicId = widget.clinicName.toLowerCase().replaceAll(' ', '_');
-      
-      // Join the queue (userId would come from auth service in production)
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        throw StateError('Please sign in to join queue');
+      }
+
       final queueEntry = await _queueService.joinQueue(
-        clinicId: clinicId,
-        clinicName: widget.clinicName,
-        userId: 'user_${DateTime.now().millisecondsSinceEpoch}',
+        clinicId: widget.clinic.id,
+        clinicName: widget.clinic.name,
+        userId: user.uid,
       );
 
       if (mounted) {
@@ -172,7 +175,7 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text(widget.clinicName),
+        title: Text(widget.clinic.name),
         backgroundColor: Colors.transparent,
         elevation: 0,
         foregroundColor: Colors.black87,
@@ -197,7 +200,7 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
                       children: [
                         Expanded(
                           child: Text(
-                            widget.clinicName,
+                            widget.clinic.name,
                             style: const TextStyle(
                               fontSize: 24,
                               fontWeight: FontWeight.bold,
@@ -229,25 +232,26 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
                       children: [
                         const Icon(Icons.star, color: Colors.amber, size: 20),
                         const SizedBox(width: 4),
-                        const Text(
-                          '4.5',
+                        Text(
+                          widget.clinic.rating.toStringAsFixed(1),
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w500,
                           ),
                         ),
                         const SizedBox(width: 16),
-                        const Icon(Icons.access_time, color: Colors.grey, size: 20),
+                        const Icon(Icons.access_time,
+                            color: Colors.grey, size: 20),
                         const SizedBox(width: 4),
-                        const Text(
-                          '15 min wait',
+                        Text(
+                          '${widget.clinic.waitTimeMinutes} min wait',
                           style: TextStyle(color: Colors.grey),
                         ),
                       ],
                     ),
                     const SizedBox(height: 12),
-                    const Text(
-                      '123 Main Street, New Delhi, India',
+                    Text(
+                      widget.clinic.address,
                       style: TextStyle(
                         color: Colors.grey,
                         fontSize: 14,
@@ -271,18 +275,13 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
             Wrap(
               spacing: 8,
               runSpacing: 8,
-              children: [
-                'General Medicine',
-                'Cardiology',
-                'Emergency',
-                'Orthopedics',
-                'Neurology',
-                'Pediatrics',
-              ].map((service) => Chip(
-                label: Text(service),
-                backgroundColor: Colors.teal[50],
-                side: BorderSide(color: Colors.teal[200]!),
-              )).toList(),
+              children: widget.clinic.services
+                  .map((service) => Chip(
+                        label: Text(service),
+                        backgroundColor: Colors.teal[50],
+                        side: BorderSide(color: Colors.teal[200]!),
+                      ))
+                  .toList(),
             ),
             const SizedBox(height: 24),
 
@@ -308,7 +307,8 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
                     const Divider(),
                     _buildContactRow(Icons.email, 'info@clinic.com'),
                     const Divider(),
-                    _buildContactRow(Icons.access_time, '24/7 Emergency Services'),
+                    _buildContactRow(
+                        Icons.access_time, '24/7 Emergency Services'),
                   ],
                 ),
               ),
@@ -389,7 +389,8 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
                       ),
                       child: Row(
                         children: [
-                          Icon(Icons.info_outline, size: 16, color: Colors.grey[600]),
+                          Icon(Icons.info_outline,
+                              size: 16, color: Colors.grey[600]),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -415,13 +416,13 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
                 Expanded(
                   child: OutlinedButton.icon(
                     onPressed: _isCalling ? null : _handleCallButton,
-                    icon: _isCalling 
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.phone),
+                    icon: _isCalling
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.phone),
                     label: Text(_isCalling ? 'Calling...' : 'Call'),
                     style: OutlinedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -433,7 +434,9 @@ class _ClinicDetailScreenState extends State<ClinicDetailScreen> {
                   child: ElevatedButton.icon(
                     onPressed: (_isJoiningQueue || _isSettingUpGeofence)
                         ? null
-                        : (_useGeofencing ? _handleSetupGeofence : _handleJoinQueue),
+                        : (_useGeofencing
+                            ? _handleSetupGeofence
+                            : _handleJoinQueue),
                     icon: (_isJoiningQueue || _isSettingUpGeofence)
                         ? const SizedBox(
                             width: 16,

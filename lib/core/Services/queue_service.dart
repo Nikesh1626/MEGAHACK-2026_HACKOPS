@@ -1,7 +1,7 @@
 import 'dart:async';
-import 'dart:convert';
-import 'dart:math';
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import '../constants/firestore_schema.dart';
 import '../model/queue_entry.dart';
 
 class QueueService {
@@ -10,202 +10,181 @@ class QueueService {
   QueueService._internal();
 
   final _queueController = StreamController<QueueEntry?>.broadcast();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   Stream<QueueEntry?> get queueStream => _queueController.stream;
 
   QueueEntry? _currentQueue;
-  Timer? _simulationTimer;
-  int? _targetPosition; // Store the random target position for jump
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _queueSubscription;
 
   /// Get current active queue entry
   QueueEntry? get currentQueue => _currentQueue;
 
-  /// Join a queue at a clinic
-  /// NOTE: This is a TEMPORARY DEMO feature with simulated queue (positions 2-10)
-  /// Will be replaced with live backend queue system in production
   Future<QueueEntry> joinQueue({
     required String clinicId,
     required String clinicName,
     required String userId,
   }) async {
-    // Cancel existing queue if any
+    final user = _auth.currentUser;
+    if (user == null) {
+      throw StateError('User must be logged in to join a queue');
+    }
+
     await cancelQueue();
 
-    // DEMO: Queue starts at 1 and counts UP to user's position (4-10)
-    // User gets notification at position 3 (before their turn)
-    // Queue will count: 1→2→3 (notification)→4→5...→user position
-    final random = Random();
-    final userPosition = random.nextInt(7) + 4; // Random position: 4 to 10
-    _targetPosition = userPosition;
-    
-    final position = 1; // Queue always starts at 1
-    final waitTime = (userPosition - position) * 5; // Wait time based on remaining positions
+    return _firestore.runTransaction((transaction) async {
+      final activeQueueSnapshot = await _firestore
+          .collection(FsCollections.queueEntries)
+          .where(FsFields.clinicId, isEqualTo: clinicId)
+          .where(FsFields.status,
+              whereIn: ['waiting', 'confirmed', 'called']).get();
 
-    final queueEntry = QueueEntry(
-      id: DateTime.now().millisecondsSinceEpoch.toString(),
-      clinicId: clinicId,
-      clinicName: clinicName,
-      userId: userId,
-      joinedAt: DateTime.now(),
-      position: position,
-      estimatedWaitMinutes: waitTime,
-      userTargetPosition: userPosition,
-      status: QueueStatus.confirmed,
-      updates: [
-        QueueUpdate(
-          message: 'Queue starting. Your position: ${userPosition}${_getOrdinalSuffix(userPosition)}',
-          timestamp: DateTime.now(),
-        ),
-      ],
-    );
+      final nextPosition = activeQueueSnapshot.docs.length + 1;
+      final estimatedWaitMinutes = nextPosition * 5;
+      final now = DateTime.now();
+      final docRef = _firestore.collection(FsCollections.queueEntries).doc();
 
-    _currentQueue = queueEntry;
-    await _saveQueue(queueEntry);
-    _queueController.add(queueEntry);
+      transaction.set(docRef, {
+        FsFields.clinicId: clinicId,
+        FsFields.clinicName: clinicName,
+        FsFields.userId: user.uid,
+        FsFields.userName: user.displayName ?? user.email ?? userId,
+        FsFields.userEmail: user.email,
+        FsFields.joinedAt: FieldValue.serverTimestamp(),
+        FsFields.position: nextPosition,
+        FsFields.estimatedWaitMinutes: estimatedWaitMinutes,
+        FsFields.userTargetPosition: nextPosition,
+        FsFields.status: 'confirmed',
+        FsFields.updates: [
+          {
+            FsFields.message: 'Joined queue at $clinicName',
+            FsFields.timestamp: now.toIso8601String(),
+          }
+        ],
+        FsFields.updatedAt: FieldValue.serverTimestamp(),
+      });
 
-    // Start simulation
-    _startQueueSimulation();
+      final queueEntry = QueueEntry(
+        id: docRef.id,
+        clinicId: clinicId,
+        clinicName: clinicName,
+        userId: user.uid,
+        joinedAt: now,
+        position: nextPosition,
+        estimatedWaitMinutes: estimatedWaitMinutes,
+        userTargetPosition: nextPosition,
+        status: QueueStatus.confirmed,
+        updates: [
+          QueueUpdate(
+            message: 'Joined queue at $clinicName',
+            timestamp: now,
+          ),
+        ],
+      );
 
-    return queueEntry;
+      _currentQueue = queueEntry;
+      _queueController.add(queueEntry);
+      return queueEntry;
+    });
   }
 
   /// Cancel current queue
   Future<void> cancelQueue() async {
     if (_currentQueue != null) {
+      await _firestore
+          .collection(FsCollections.queueEntries)
+          .doc(_currentQueue!.id)
+          .set({
+        FsFields.status: 'cancelled',
+        FsFields.updatedAt: FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+
       _currentQueue = null;
-      _simulationTimer?.cancel();
-      await _clearSavedQueue();
       _queueController.add(null);
     }
   }
 
   /// Load saved queue from local storage
   Future<void> loadSavedQueue() async {
-    final prefs = await SharedPreferences.getInstance();
-    final queueJson = prefs.getString('current_queue');
-    
-    if (queueJson != null) {
-      try {
-        final Map<String, dynamic> json = jsonDecode(queueJson);
-        _currentQueue = QueueEntry.fromJson(json);
-        _queueController.add(_currentQueue);
-        
-        // Resume simulation if still waiting
-        if (_currentQueue!.status == QueueStatus.confirmed ||
-            _currentQueue!.status == QueueStatus.waiting) {
-          _startQueueSimulation();
+    final user = _auth.currentUser;
+    if (user == null) {
+      _currentQueue = null;
+      _queueController.add(null);
+      return;
+    }
+    await _queueSubscription?.cancel();
+    _queueSubscription = _firestore
+        .collection(FsCollections.queueEntries)
+        .where(FsFields.userId, isEqualTo: user.uid)
+        .where(FsFields.status, whereIn: ['waiting', 'confirmed', 'called'])
+        .snapshots()
+        .listen((snapshot) {
+          if (snapshot.docs.isEmpty) {
+            _currentQueue = null;
+            _queueController.add(null);
+            return;
+          }
+
+          final docs = snapshot.docs.toList()
+            ..sort((a, b) {
+              final aTs = a.data()[FsFields.joinedAt];
+              final bTs = b.data()[FsFields.joinedAt];
+              final aDate = aTs is Timestamp ? aTs.toDate() : DateTime.now();
+              final bDate = bTs is Timestamp ? bTs.toDate() : DateTime.now();
+              return bDate.compareTo(aDate);
+            });
+
+          final activeDoc = docs.first;
+          _currentQueue = _fromFirestore(activeDoc);
+          _queueController.add(_currentQueue);
+        });
+  }
+
+  QueueEntry _fromFirestore(QueryDocumentSnapshot<Map<String, dynamic>> doc) {
+    final data = doc.data();
+    final joinedAt = data[FsFields.joinedAt];
+    final updatesRaw = data[FsFields.updates] as List<dynamic>? ?? const [];
+
+    final statusName = (data[FsFields.status] ?? 'waiting').toString();
+    final status = QueueStatus.values.firstWhere(
+      (value) => value.name == statusName,
+      orElse: () => QueueStatus.waiting,
+    );
+
+    return QueueEntry(
+      id: doc.id,
+      clinicId: (data[FsFields.clinicId] ?? '').toString(),
+      clinicName: (data[FsFields.clinicName] ?? 'Clinic').toString(),
+      userId: (data[FsFields.userId] ?? '').toString(),
+      joinedAt: joinedAt is Timestamp ? joinedAt.toDate() : DateTime.now(),
+      position: (data[FsFields.position] as num?)?.toInt() ?? 1,
+      estimatedWaitMinutes:
+          (data[FsFields.estimatedWaitMinutes] as num?)?.toInt() ?? 0,
+      userTargetPosition:
+          (data[FsFields.userTargetPosition] as num?)?.toInt() ??
+              (data[FsFields.position] as num?)?.toInt() ??
+              1,
+      status: status,
+      updates: updatesRaw.map((item) {
+        final map = item as Map<String, dynamic>;
+        final timestamp = map[FsFields.timestamp];
+        DateTime parsedTimestamp;
+        if (timestamp is Timestamp) {
+          parsedTimestamp = timestamp.toDate();
+        } else {
+          parsedTimestamp =
+              DateTime.tryParse(timestamp.toString()) ?? DateTime.now();
         }
-      } catch (e) {
-        // Invalid data, clear it
-        await _clearSavedQueue();
-      }
-    }
-  }
-
-  /// Save queue to local storage
-  Future<void> _saveQueue(QueueEntry queue) async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('current_queue', jsonEncode(queue.toJson()));
-  }
-
-  /// Clear saved queue
-  Future<void> _clearSavedQueue() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.remove('current_queue');
-  }
-
-  /// Simulate queue progression (TEMPORARY - counts up from 1 to user position)
-  /// TODO: Replace with real-time backend updates when live queue is activated
-  void _startQueueSimulation() {
-    _simulationTimer?.cancel();
-    
-    // Queue moves every 3 seconds, counting UP from 1 to user's position
-    _simulationTimer = Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (_currentQueue == null) {
-        timer.cancel();
-        return;
-      }
-
-      // Don't update if already called or completed
-      if (_currentQueue!.status == QueueStatus.called ||
-          _currentQueue!.status == QueueStatus.completed ||
-          _currentQueue!.status == QueueStatus.cancelled) {
-        timer.cancel();
-        return;
-      }
-
-      // Queue counts up until reaching user's position
-      if (_targetPosition != null && _currentQueue!.position < _targetPosition!) {
-        final newPosition = _currentQueue!.position + 1;
-        final updates = List<QueueUpdate>.from(_currentQueue!.updates);
-        
-        // Regular queue movement update
-        final random = Random();
-        final clinicUpdates = [
-          'Queue progressing: now calling position $newPosition',
-          'Patient completed their visit',
-          'Queue moving smoothly',
-        ];
-        
-        if (random.nextInt(2) == 0) {
-          updates.insert(0, QueueUpdate(
-            message: clinicUpdates[random.nextInt(clinicUpdates.length)],
-            timestamp: DateTime.now(),
-          ));
-        }
-        
-        // Calculate remaining wait time (user position - current position)
-        final remainingPositions = (_targetPosition! - newPosition).clamp(0, 1000);
-        final newWaitTime = remainingPositions * 5;
-
-        _currentQueue = _currentQueue!.copyWith(
-          position: newPosition,
-          estimatedWaitMinutes: newWaitTime,
-          userTargetPosition: _targetPosition,
-          updates: updates,
+        return QueueUpdate(
+          message: (map[FsFields.message] ?? '').toString(),
+          timestamp: parsedTimestamp,
         );
-
-        _saveQueue(_currentQueue!);
-        _queueController.add(_currentQueue);
-      } else if (_targetPosition != null && _currentQueue!.position >= _targetPosition!) {
-        // Reached user's position: mark as called
-        final updates = List<QueueUpdate>.from(_currentQueue!.updates);
-        updates.insert(0, QueueUpdate(
-          message: 'You are next! Please proceed to the clinic',
-          timestamp: DateTime.now(),
-        ));
-
-        _currentQueue = _currentQueue!.copyWith(
-          status: QueueStatus.called,
-          estimatedWaitMinutes: 0,
-          userTargetPosition: _targetPosition,
-          updates: updates,
-        );
-
-        _saveQueue(_currentQueue!);
-        _queueController.add(_currentQueue);
-        timer.cancel();
-      }
-    });
-  }
-
-  String _getOrdinalSuffix(int number) {
-    if (number >= 11 && number <= 13) {
-      return 'th';
-    }
-    switch (number % 10) {
-      case 1:
-        return 'st';
-      case 2:
-        return 'nd';
-      case 3:
-        return 'rd';
-      default:
-        return 'th';
-    }
+      }).toList(),
+    );
   }
 
   void dispose() {
-    _simulationTimer?.cancel();
+    _queueSubscription?.cancel();
     _queueController.close();
   }
 }

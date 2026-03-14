@@ -1,122 +1,207 @@
 import '../../../core/model/clinic.dart';
+import '../../../core/constants/firestore_schema.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:latlong2/latlong.dart';
 
 class ClinicRepository {
-  // Mock clinic data with realistic locations
-  static const List<Map<String, dynamic>> _mockClinics = [
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  static const List<Map<String, dynamic>> _staticClinics = [
     {
-      'id': '1',
-      'name': 'Apollo Hospitals',
-      'lat': 28.6139,
-      'lng': 77.2090,
-      'waitTimeMinutes': 15,
-      'services': ['General Medicine', 'Cardiology', 'Emergency'],
-      'rating': 4.5,
-      'address': 'Mathura Road, New Delhi',
+      FsFields.id: 'apollo_delhi',
+      FsFields.name: 'Apollo Hospitals',
+      FsFields.lat: 28.6139,
+      FsFields.lng: 77.2090,
+      FsFields.waitTimeMinutes: 14,
+      FsFields.services: ['General Medicine', 'Cardiology', 'Emergency'],
+      FsFields.rating: 4.5,
+      FsFields.address: 'Mathura Road, New Delhi',
     },
     {
-      'id': '2',
-      'name': 'Fortis Healthcare',
-      'lat': 28.6140,
-      'lng': 77.2100,
-      'waitTimeMinutes': 25,
-      'services': ['Orthopedics', 'Neurology', 'Pediatrics'],
-      'rating': 4.3,
-      'address': 'Vasant Kunj, New Delhi',
+      FsFields.id: 'fortis_vasant_kunj',
+      FsFields.name: 'Fortis Healthcare',
+      FsFields.lat: 28.5273,
+      FsFields.lng: 77.1539,
+      FsFields.waitTimeMinutes: 21,
+      FsFields.services: ['Orthopedics', 'Neurology', 'Pediatrics'],
+      FsFields.rating: 4.3,
+      FsFields.address: 'Vasant Kunj, New Delhi',
     },
     {
-      'id': '3',
-      'name': 'Max Super Speciality Hospital',
-      'lat': 28.6150,
-      'lng': 77.2110,
-      'waitTimeMinutes': 35,
-      'services': ['Oncology', 'Cardiac Surgery', 'Transplant'],
-      'rating': 4.7,
-      'address': 'Saket, New Delhi',
+      FsFields.id: 'max_saket',
+      FsFields.name: 'Max Super Speciality Hospital',
+      FsFields.lat: 28.5271,
+      FsFields.lng: 77.2170,
+      FsFields.waitTimeMinutes: 32,
+      FsFields.services: ['Oncology', 'Cardiac Surgery', 'Transplant'],
+      FsFields.rating: 4.6,
+      FsFields.address: 'Saket, New Delhi',
     },
     {
-      'id': '4',
-      'name': 'AIIMS Delhi',
-      'lat': 28.6160,
-      'lng': 77.2120,
-      'waitTimeMinutes': 45,
-      'services': ['Emergency', 'Trauma', 'Specialized Care'],
-      'rating': 4.8,
-      'address': 'Ansari Nagar, New Delhi',
+      FsFields.id: 'aiims_ansari',
+      FsFields.name: 'AIIMS Delhi',
+      FsFields.lat: 28.5672,
+      FsFields.lng: 77.2100,
+      FsFields.waitTimeMinutes: 39,
+      FsFields.services: ['Emergency', 'Trauma', 'Specialized Care'],
+      FsFields.rating: 4.7,
+      FsFields.address: 'Ansari Nagar, New Delhi',
     },
     {
-      'id': '5',
-      'name': 'Safdarjung Hospital',
-      'lat': 28.6170,
-      'lng': 77.2130,
-      'waitTimeMinutes': 20,
-      'services': ['General Medicine', 'Surgery', 'Maternity'],
-      'rating': 4.2,
-      'address': 'Safdarjung Enclave, New Delhi',
-    },
-    {
-      'id': '6',
-      'name': 'Gangaram Hospital',
-      'lat': 28.6180,
-      'lng': 77.2140,
-      'waitTimeMinutes': 30,
-      'services': ['Cardiology', 'Neurology', 'Orthopedics'],
-      'rating': 4.4,
-      'address': 'Pusa Road, New Delhi',
+      FsFields.id: 'safdarjung',
+      FsFields.name: 'Safdarjung Hospital',
+      FsFields.lat: 28.5708,
+      FsFields.lng: 77.2059,
+      FsFields.waitTimeMinutes: 26,
+      FsFields.services: ['General Medicine', 'Surgery', 'Maternity'],
+      FsFields.rating: 4.1,
+      FsFields.address: 'Safdarjung Enclave, New Delhi',
     },
   ];
 
   Future<List<Clinic>> getNearbyClinics() async {
+    final snapshot = await _firestore.collection(FsCollections.clinics).get();
+    if (snapshot.docs.isEmpty) {
+      return _toStaticClinicsSorted();
+    }
+    return _toSortedClinics(snapshot.docs);
+  }
+
+  Stream<List<Clinic>> streamNearbyClinics() {
+    return _firestore
+        .collection(FsCollections.clinics)
+        .snapshots()
+        .asyncMap((snapshot) {
+      if (snapshot.docs.isEmpty) {
+        return _toStaticClinicsSorted();
+      }
+      return _toSortedClinics(snapshot.docs);
+    });
+  }
+
+  Future<List<Clinic>> _toSortedClinics(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) async {
     try {
-      // Get current location
       final position = await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
           accuracy: LocationAccuracy.high,
         ),
       );
-      
+
       final currentLocation = LatLng(position.latitude, position.longitude);
-      
-      // Calculate distances and sort by proximity
-      final clinicsWithDistance = _mockClinics.map((clinicData) {
+
+      final clinicsWithDistance = docs.map((doc) {
+        final clinicData = doc.data();
+        final lat = (clinicData[FsFields.lat] as num?)?.toDouble() ?? 0;
+        final lng = (clinicData[FsFields.lng] as num?)?.toDouble() ?? 0;
         final clinicLocation = LatLng(
-          clinicData['lat'] as double,
-          clinicData['lng'] as double,
+          lat,
+          lng,
         );
-        
+
         final distance = _calculateDistance(currentLocation, clinicLocation);
-        
+
         return Clinic(
-          id: clinicData['id'] as String,
-          name: clinicData['name'] as String,
+          id: doc.id,
+          name: (clinicData[FsFields.name] ?? 'Unknown Clinic').toString(),
           distance: distance,
-          waitTimeMinutes: clinicData['waitTimeMinutes'] as int,
-          services: List<String>.from(clinicData['services'] as List),
-          rating: clinicData['rating'] as double,
-          address: clinicData['address'] as String,
+          waitTimeMinutes: (clinicData[FsFields.waitTimeMinutes] as num?)
+                  ?.toInt() ??
+              (clinicData[FsFields.waitTimeMinutesLegacy] as num?)?.toInt() ??
+              0,
+          services: List<String>.from(
+              clinicData[FsFields.services] as List? ?? const []),
+          rating: (clinicData[FsFields.rating] as num?)?.toDouble() ?? 0,
+          address: (clinicData[FsFields.clinicAddress] ?? '').toString(),
+          latitude: lat,
+          longitude: lng,
         );
       }).toList();
 
-      // Sort by distance and return top 5
       clinicsWithDistance.sort((a, b) => a.distance.compareTo(b.distance));
-      
-      await Future.delayed(const Duration(seconds: 1)); // Simulate network delay
-      return clinicsWithDistance.take(5).toList();
-      
+      return clinicsWithDistance;
     } catch (e) {
-      // If location access fails, return default clinics
-      await Future.delayed(const Duration(seconds: 1));
-      return _mockClinics.take(3).map((clinicData) => Clinic(
-        id: clinicData['id'] as String,
-        name: clinicData['name'] as String,
-        distance: clinicData['lat'] as double, // Using lat as distance for fallback
-        waitTimeMinutes: clinicData['waitTimeMinutes'] as int,
-        services: List<String>.from(clinicData['services'] as List),
-        rating: clinicData['rating'] as double,
-        address: clinicData['address'] as String,
-      )).toList();
+      if (docs.isEmpty) {
+        return _toStaticClinicsSorted(distanceFallback: true);
+      }
+      return docs.map((doc) {
+        final clinicData = doc.data();
+        final lat = (clinicData[FsFields.lat] as num?)?.toDouble() ?? 0;
+        final lng = (clinicData[FsFields.lng] as num?)?.toDouble() ?? 0;
+        return Clinic(
+          id: doc.id,
+          name: (clinicData[FsFields.name] ?? 'Unknown Clinic').toString(),
+          distance: 0,
+          waitTimeMinutes: (clinicData[FsFields.waitTimeMinutes] as num?)
+                  ?.toInt() ??
+              (clinicData[FsFields.waitTimeMinutesLegacy] as num?)?.toInt() ??
+              0,
+          services: List<String>.from(
+              clinicData[FsFields.services] as List? ?? const []),
+          rating: (clinicData[FsFields.rating] as num?)?.toDouble() ?? 0,
+          address: (clinicData[FsFields.clinicAddress] ?? '').toString(),
+          latitude: lat,
+          longitude: lng,
+        );
+      }).toList();
     }
+  }
+
+  Future<List<Clinic>> _toStaticClinicsSorted({
+    bool distanceFallback = false,
+  }) async {
+    if (distanceFallback) {
+      return _staticClinics
+          .map((clinicData) => _clinicFromStaticMap(clinicData, distance: 0))
+          .toList();
+    }
+
+    try {
+      final position = await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+        ),
+      );
+
+      final currentLocation = LatLng(position.latitude, position.longitude);
+      final clinics = _staticClinics.map((clinicData) {
+        final clinicLocation = LatLng(
+          (clinicData[FsFields.lat] as num).toDouble(),
+          (clinicData[FsFields.lng] as num).toDouble(),
+        );
+        final distance = _calculateDistance(currentLocation, clinicLocation);
+        return _clinicFromStaticMap(clinicData, distance: distance);
+      }).toList();
+
+      clinics.sort((a, b) => a.distance.compareTo(b.distance));
+      return clinics;
+    } catch (_) {
+      return _staticClinics
+          .map((clinicData) => _clinicFromStaticMap(clinicData, distance: 0))
+          .toList();
+    }
+  }
+
+  Clinic _clinicFromStaticMap(
+    Map<String, dynamic> clinicData, {
+    required double distance,
+  }) {
+    return Clinic(
+      id: (clinicData[FsFields.id] ?? '').toString(),
+      name: (clinicData[FsFields.name] ?? 'Unknown Clinic').toString(),
+      distance: distance,
+      waitTimeMinutes:
+          (clinicData[FsFields.waitTimeMinutes] as num?)?.toInt() ?? 0,
+      services: List<String>.from(
+        clinicData[FsFields.services] as List? ?? const [],
+      ),
+      rating: (clinicData[FsFields.rating] as num?)?.toDouble() ?? 0,
+      address: (clinicData[FsFields.address] ?? '').toString(),
+      latitude: (clinicData[FsFields.lat] as num?)?.toDouble() ?? 0,
+      longitude: (clinicData[FsFields.lng] as num?)?.toDouble() ?? 0,
+    );
   }
 
   double _calculateDistance(LatLng point1, LatLng point2) {

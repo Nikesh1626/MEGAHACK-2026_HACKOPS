@@ -14,7 +14,7 @@ class ClinicCard extends StatelessWidget {
         // Navigate to the ClinicDetailScreen when the card is tapped
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (context) => ClinicDetailScreen(clinicName: clinic.name),
+            builder: (context) => ClinicDetailScreen(clinic: clinic),
           ),
         );
       },

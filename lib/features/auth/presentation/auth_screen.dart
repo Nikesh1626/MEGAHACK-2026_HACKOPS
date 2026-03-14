@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'dart:async';
 import '../../LocationAccessScreen/location_access_screen.dart';
+import '../../../core/constants/firestore_schema.dart';
 import '../../../core/services/auth_service.dart';
 import '../../../core/services/auth_storage_service.dart';
 
@@ -57,11 +58,13 @@ class _AuthScreenState extends State<AuthScreen> {
 
     final pendingSignupData = await AuthStorageService.getPendingSignupData();
     if (pendingSignupData != null) {
-      final firstName = (pendingSignupData['first_name'] ?? '').toString();
-      final lastName = (pendingSignupData['last_name'] ?? '').toString();
-      final phone = (pendingSignupData['phone'] ?? '').toString();
-      final email = (pendingSignupData['email'] ?? refreshedUser.email ?? '').toString();
-      final age = int.tryParse((pendingSignupData['age'] ?? '').toString()) ?? 0;
+      final firstName = (pendingSignupData[FsFields.firstName] ?? '').toString();
+      final lastName = (pendingSignupData[FsFields.lastName] ?? '').toString();
+      final phone = (pendingSignupData[FsFields.phone] ?? '').toString();
+      final email =
+          (pendingSignupData[FsFields.email] ?? refreshedUser.email ?? '')
+              .toString();
+      final age = int.tryParse((pendingSignupData[FsFields.age] ?? '').toString()) ?? 0;
 
       if (firstName.isNotEmpty && email.isNotEmpty && age > 0) {
         try {
@@ -545,11 +548,11 @@ class _AuthScreenState extends State<AuthScreen> {
 
     try {
       final signupData = {
-        'first_name': _firstNameController.text.trim(),
-        'last_name': _lastNameController.text.trim(),
-        'phone': _phoneController.text.trim(),
-        'age': _ageController.text.trim(),
-        'email': _emailController.text.trim(),
+        FsFields.firstName: _firstNameController.text.trim(),
+        FsFields.lastName: _lastNameController.text.trim(),
+        FsFields.phone: _phoneController.text.trim(),
+        FsFields.age: _ageController.text.trim(),
+        FsFields.email: _emailController.text.trim(),
       };
       await AuthStorageService.setPendingSignupData(signupData);
 
